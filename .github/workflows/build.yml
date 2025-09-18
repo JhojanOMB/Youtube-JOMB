@@ -1,35 +1,76 @@
-name: Build YouTube App
+name: Build & Create Installer
 
+# Ejecuta en cada push a main o manualmente desde Actions
 on:
   push:
-    branches: [ "main" ]   
-  workflow_dispatch:      
+    branches: [ "main" ]
+  workflow_dispatch:
+
+# Permitimos que el workflow escriba contenido (necesario para crear releases/tags)
+permissions:
+  contents: write
 
 jobs:
-  build:
+  build-win:
+    name: Construir instalador Windows
     runs-on: windows-latest
 
     steps:
-    - name: Checkout repo
+    # ---- 1) Obtener el código ----
+    - name: Checkout (obtener código)
       uses: actions/checkout@v3
 
-    - name: Set up Python
+    # ---- 2) Leer VERSION (archivo en la raíz) ----
+    - name: Obtener versión desde archivo VERSION
+      id: get_version
+      shell: pwsh
+      run: |
+        $v = (Get-Content VERSION -Raw).Trim()
+        if (-not $v) { Write-Error "El archivo VERSION está vacío o no existe" }
+        # Exportar la versión como output del step
+        echo "version=$v" >> $env:GITHUB_OUTPUT
+
+    # ---- 3) Preparar Python ----
+    - name: Configurar Python
       uses: actions/setup-python@v4
       with:
         python-version: "3.11"
 
-    - name: Install dependencies
+    # ---- 4) Instalar dependencias de Python ----
+    - name: Instalar dependencias (pip) y PyInstaller
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: Build executable
-      run: pyinstaller --onefile --windowed --icon=icono.ico youtube.py
+    # ---- 5) Construir .exe con PyInstaller ----
+    - name: Construir exe con PyInstaller
+      run: |
+        # Ajusta 'youtube.py' si tu archivo principal tiene otro nombre
+        pyinstaller --onefile --windowed --icon=icono.ico youtube.py
 
-    - name: Upload Release
-      uses: softprops/action-gh-release@v1
+    # ---- 6) Instalar Inno Setup (para crear instalador bonito) ----
+    - name: Instalar Inno Setup (choco)
+      run: choco install innosetup -y
+
+    # ---- 7) Construir el instalador con Inno Setup ----
+    - name: Construir instalador con Inno Setup
+      shell: pwsh
+      run: |
+        $ver = "${{ steps.get_version.outputs.version }}"
+        Write-Host "Construyendo instalador versión $ver"
+        # Llamamos al compilador ISCC y pasamos la variable MyAppVersion
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_script.iss /DMyAppVersion=$ver
+
+    # ---- 8) Crear Release en GitHub y subir el instalador ----
+    - name: Crear Release y subir instalador
+      uses: ncipollo/release-action@v1
       with:
-        files: dist/youtube.exe
+        # Usamos prefijo 'v' en la etiqueta (ej. v1.0.0). Si no quieres 'v', quita la 'v' aquí.
+        tag: v${{ steps.get_version.outputs.version }}
+        name: Release v${{ steps.get_version.outputs.version }}
+        files: installer/*.exe
+        draft: false
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
