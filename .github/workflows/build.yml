@@ -27,7 +27,6 @@ jobs:
       run: |
         $v = (Get-Content VERSION -Raw).Trim()
         if (-not $v) { Write-Error "El archivo VERSION está vacío o no existe" }
-        # Exportar la versión como output del step
         echo "version=$v" >> $env:GITHUB_OUTPUT
 
     # ---- 3) Preparar Python ----
@@ -43,30 +42,41 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    # ---- 5) Construir .exe con PyInstaller ----
+    # ---- 5) Limpiar builds anteriores (opcional pero recomendado) ----
+    - name: Limpiar build/dist anteriores
+      shell: pwsh
+      run: |
+        Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+        Remove-Item -Force *.spec -ErrorAction SilentlyContinue
+
+    # ---- 6) Construir .exe con PyInstaller ----
     - name: Construir exe con PyInstaller
       run: |
-        # Ajusta 'youtube.py' si tu archivo principal tiene otro nombre
         pyinstaller --onefile --windowed --icon=icono.ico youtube.py
 
-    # ---- 6) Instalar Inno Setup (para crear instalador bonito) ----
+    # ---- 7) Mostrar archivos generados (debug) ----
+    - name: Listar dist/ y archivos
+      run: dir dist
+      shell: pwsh
+
+    # ---- 8) Instalar Inno Setup (para crear instalador bonito) ----
     - name: Instalar Inno Setup (choco)
       run: choco install innosetup -y
 
-    # ---- 7) Construir el instalador con Inno Setup ----
+    # ---- 9) Construir el instalador con Inno Setup ----
     - name: Construir instalador con Inno Setup
       shell: pwsh
       run: |
         $ver = "${{ steps.get_version.outputs.version }}"
         Write-Host "Construyendo instalador versión $ver"
-        # Llamamos al compilador ISCC y pasamos la variable MyAppVersion
-        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_script.iss /DMyAppVersion=$ver
+        # Llamamos al compilador ISCC y pasamos la variable MyAppVersion entre comillas
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_script.iss "/DMyAppVersion=$ver"
 
-    # ---- 8) Crear Release en GitHub y subir el instalador ----
+    # ---- 10) Crear Release en GitHub y subir el instalador ----
     - name: Crear Release y subir instalador
       uses: ncipollo/release-action@v1
       with:
-        # Usamos prefijo 'v' en la etiqueta (ej. v1.0.0). Si no quieres 'v', quita la 'v' aquí.
         tag: v${{ steps.get_version.outputs.version }}
         name: Release v${{ steps.get_version.outputs.version }}
         files: installer/*.exe
