@@ -16,7 +16,7 @@ DisableProgramGroupPage=yes
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Files]
-; Asegúrate que dist\youtube.exe exista después de pyinstaller
+; Aquí copiamos el exe generado por PyInstaller
 Source: "dist\youtube.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

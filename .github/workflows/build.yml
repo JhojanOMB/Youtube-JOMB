@@ -42,7 +42,7 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    # ---- 5) Limpiar builds anteriores (opcional pero recomendado) ----
+    # ---- 5) Limpiar builds anteriores ----
     - name: Limpiar build/dist anteriores
       shell: pwsh
       run: |
@@ -70,16 +70,15 @@ jobs:
       run: |
         $ver = "${{ steps.get_version.outputs.version }}"
         Write-Host "Construyendo instalador versión $ver"
-        # Llamamos al compilador ISCC y pasamos la variable MyAppVersion entre comillas
         & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_script.iss "/DMyAppVersion=$ver"
 
-    # ---- 10) Crear Release en GitHub y subir el instalador ----
+    # ---- 10) Crear Release en GitHub y subir SOLO el instalador ----
     - name: Crear Release y subir instalador
       uses: ncipollo/release-action@v1
       with:
         tag: v${{ steps.get_version.outputs.version }}
         name: Release v${{ steps.get_version.outputs.version }}
-        files: installer/*.exe
+        files: installer/YouTubeDownloaderSetup_${{ steps.get_version.outputs.version }}.exe
         draft: false
         prerelease: false
       env:
