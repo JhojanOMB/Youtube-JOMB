@@ -1,4 +1,5 @@
-# --- arreglos/añadidos al inicio del archivo ---
+# -*- coding: utf-8 -*-
+# Descargador YouTube - versión con metadatos y portada robusta
 import os
 import tempfile
 import imageio_ffmpeg as ffmpeg
@@ -6,6 +7,7 @@ import subprocess
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from pytubefix import YouTube
+from customtkinter import *
 from tkinter import filedialog, messagebox, PhotoImage, Label, Toplevel
 import webbrowser
 import re
@@ -13,10 +15,12 @@ import urllib.request
 from io import BytesIO
 from PIL import Image, ImageTk
 import socket
+
+# mutagen
 from mutagen import File
-from mutagen.id3 import APIC, error as ID3Error
-from mutagen.flac import Picture
-from mutagen.mp4 import MP4Cover
+from mutagen.id3 import ID3, APIC, TIT2, TPE1, TDRC, ID3NoHeaderError, error as ID3Error
+from mutagen.flac import FLAC, Picture
+from mutagen.mp4 import MP4, MP4Cover
 
 # ------------------------------------------------------------------
 ffmpeg_path = ffmpeg.get_ffmpeg_exe()
@@ -33,28 +37,143 @@ def tiene_conexion():
     except:
         return False
 
-# Callback de progreso
+# Callback de progreso (pytube)
 def on_progress(stream, chunk, bytes_remaining):
-    total = stream.filesize
-    downloaded = total - bytes_remaining
-    percent = downloaded / total * 100
-    progress_var.set(percent)
-    progress_bar.update()
-    status_label.config(text=f"Descargando audio... {percent:.1f}%")
+    try:
+        total = stream.filesize
+        downloaded = total - bytes_remaining
+        percent = downloaded / total * 100
+        progress_var.set(percent)
+        progress_bar.update()
+        status_label.config(text=f"Descargando... {percent:.1f}%")
+    except Exception:
+        pass
 
 # Limpia nombre de archivo
 def limpiar_nombre(nombre):
     return re.sub(r'[<>:"/\\|?*]', '', nombre)
 
-# Función para conversión con ffmpeg
 # ------------------------------------------------------------------
-def convertir(input_path, output_path):
+# Función para conversión con ffmpeg (ahora con soporte de bitrate)
+def convertir(input_path, output_path, bitrate=None):
+    """
+    Convierte input_path -> output_path usando ffmpeg.
+    bitrate ejemplo: '320k' o None.
+    """
     try:
-        subprocess.run([ffmpeg_path, '-y', '-i', input_path, output_path], check=True)
-        os.remove(input_path)
+        target_ext = os.path.splitext(output_path)[1].lstrip('.').lower()
+        cmd = [ffmpeg_path, '-y', '-i', input_path]
+
+        # Forzar codecs/bitrate recomendados por tipo
+        if target_ext == 'mp3':
+            cmd += ['-vn', '-c:a', 'libmp3lame']
+            if bitrate:
+                cmd += ['-b:a', bitrate]
+        elif target_ext in ('m4a', 'mp4', 'aac', 'alac'):
+            cmd += ['-vn', '-c:a', 'aac']
+            if bitrate:
+                cmd += ['-b:a', bitrate]
+        else:
+            # wav, flac, aiff, etc.
+            cmd += ['-vn']
+            if bitrate:
+                cmd += ['-b:a', bitrate]
+
+        cmd.append(output_path)
+        subprocess.run(cmd, check=True)
+
+        # intentar borrar el archivo temporal
+        try:
+            os.remove(input_path)
+        except:
+            pass
+
     except subprocess.CalledProcessError as e:
-        mostrar_error(f"Fallo en conversión:\n{e}")  # <-- f-string corregida
+        mostrar_error(f"Fallo en conversión:\n{e}")
         raise
+# ------------------------------------------------------------------
+
+# Función para agregar metadatos y miniatura
+def agregar_metadatos_y_miniatura(out_file, yt_obj, img_data=None):
+    """
+    Añade título, artista, año y miniatura al archivo de audio.
+    Retorna un string con el resultado o el error.
+    """
+    try:
+        lower = out_file.lower()
+        # ---------- MP3 (ID3 v2.3) ----------
+        if lower.endswith('.mp3'):
+            try:
+                tags = ID3(out_file)
+            except ID3NoHeaderError:
+                tags = ID3()
+
+            # TIT2: título
+            if getattr(yt_obj, 'title', None):
+                try: tags.delall('TIT2')
+                except: pass
+                tags.add(TIT2(encoding=3, text=yt_obj.title))
+            # TPE1: artista/autor
+            if getattr(yt_obj, 'author', None):
+                try: tags.delall('TPE1')
+                except: pass
+                tags.add(TPE1(encoding=3, text=getattr(yt_obj, 'author')))
+            # TDRC: fecha
+            if getattr(yt_obj, 'publish_date', None):
+                pd = yt_obj.publish_date
+                year = pd.year if hasattr(pd, 'year') else str(pd)
+                try: tags.delall('TDRC')
+                except: pass
+                tags.add(TDRC(encoding=3, text=str(year)))
+
+            # APIC: portada
+            if img_data:
+                try: tags.delall('APIC')
+                except: pass
+                tags.add(APIC(encoding=3, mime='image/jpeg', type=3, desc='Cover', data=img_data))
+
+            # Guardar con ID3 v2.3 para mejor compatibilidad en Windows
+            tags.save(out_file, v2_version=3)
+            return "Metadatos y miniatura agregados a MP3."
+
+        # ---------- FLAC ----------
+        elif lower.endswith('.flac'):
+            audio = FLAC(out_file)
+            if getattr(yt_obj, 'title', None):
+                audio['title'] = yt_obj.title
+            if getattr(yt_obj, 'author', None):
+                audio['artist'] = getattr(yt_obj, 'author')
+            if getattr(yt_obj, 'publish_date', None):
+                audio['date'] = str(getattr(yt_obj, 'publish_date'))
+            if img_data:
+                pic = Picture()
+                pic.data = img_data
+                pic.type = 3
+                pic.mime = "image/jpeg"
+                audio.add_picture(pic)
+            audio.save()
+            return "Metadatos y miniatura agregados a FLAC."
+
+        # ---------- M4A/MP4/AAC ----------
+        elif lower.endswith(('.m4a', '.mp4', '.aac', '.alac')):
+            audio = MP4(out_file)
+            if getattr(yt_obj, 'title', None):
+                audio['\xa9nam'] = [yt_obj.title]
+            if getattr(yt_obj, 'author', None):
+                audio['\xa9ART'] = [getattr(yt_obj, 'author')]
+            if getattr(yt_obj, 'publish_date', None):
+                audio['\xa9day'] = [str(getattr(yt_obj, 'publish_date'))]
+            if img_data:
+                audio.tags['covr'] = [MP4Cover(img_data, imageformat=MP4Cover.FORMAT_JPEG)]
+            audio.save()
+            return "Metadatos y miniatura agregados a M4A/MP4."
+
+        else:
+            return "Formato no soportado para metadatos/miniatura."
+
+    except Exception as e:
+        return f"No se pudo agregar metadatos: {e}"
+
 # ------------------------------------------------------------------
 
 # Nuevo handler: cuando cambie el tipo, limpia y (si hay URL) busca formatos
@@ -140,7 +259,8 @@ def descargar_video():
     os.makedirs(ubicacion, exist_ok=True)
     tmp = tempfile.gettempdir()
 
-    extra = ['wav', 'aiff', 'flac', 'alac', 'wma']
+    # incluir mp3 entre extras para conversión
+    extra = ['mp3', 'wav', 'aiff', 'flac', 'alac', 'wma']
 
     if tipo == 'video':
         stream = next((s for s in yt.streams.filter(progressive=True) if s.resolution == calidad), None)
@@ -155,7 +275,9 @@ def descargar_video():
         ttkwindow.update_idletasks()
         temp_file = stream.download(output_path=tmp, filename_prefix="tmp_")
         out_file = os.path.join(ubicacion, f"{titulo}.{formato}")
-        if formato in extra or os.path.splitext(temp_file)[1].lstrip('.') != formato:
+        temp_ext = os.path.splitext(temp_file)[1].lstrip('.').lower()
+        if formato in extra or temp_ext != formato:
+            # para video también puede necesitar conversión
             convertir(temp_file, out_file)
         else:
             os.replace(temp_file, out_file)
@@ -165,11 +287,14 @@ def descargar_video():
         progress_var.set(0)
         progress_bar.update()
         ttkwindow.update_idletasks()
+
+        # elegir el mejor stream de audio
         stream = next((a for a in yt.streams.filter(only_audio=True).order_by('abr').desc()), None)
         if not stream:
             mostrar_error("No se encontró stream de audio.")
             status_label.config(text="Error: No se encontró stream de audio.", foreground="red")
             return
+
         temp_file = stream.download(output_path=tmp, filename_prefix="tmp_")
         status_label.config(text="Audio descargado.", foreground="green")
         progress_var.set(100)
@@ -177,60 +302,38 @@ def descargar_video():
         ttkwindow.update_idletasks()
 
         out_file = os.path.join(ubicacion, f"{titulo}.{formato}")
-        if formato in extra or os.path.splitext(temp_file)[1].lstrip('.') != formato:
-            convertir(temp_file, out_file)
+
+        # Determinar bitrate desde la opción calidad (ej: '320kbps' -> '320k')
+        bitrate = None
+        if calidad:
+            nums = re.sub(r'[^0-9]', '', calidad)
+            if nums:
+                bitrate = f"{nums}k"
+
+        temp_ext = os.path.splitext(temp_file)[1].lstrip('.').lower()
+        # si pediste mp3 u otro formato "extra" o la extensión no coincide, convertir
+        if formato in extra or temp_ext != formato:
+            convertir(temp_file, out_file, bitrate=bitrate)
         else:
             os.replace(temp_file, out_file)
 
-        # --- AGREGAR MINIATURA A CUALQUIER FORMATO DE AUDIO ---
+        # --- AGREGAR MINIATURA Y METADATOS ---
         try:
             status_label.config(text="Descargando miniatura...", foreground="blue")
             ttkwindow.update_idletasks()
             thumb_url = getattr(yt, "thumbnail_url", None) or getattr(yt, "thumbnail", None)
+            img_data = None
             if thumb_url:
                 with urllib.request.urlopen(thumb_url, timeout=6) as u:
                     img_data = u.read()
-                status_label.config(text="Insertando miniatura...", foreground="blue")
-                ttkwindow.update_idletasks()
-                audio = File(out_file)
-                if audio is not None:
-                    if out_file.lower().endswith('.mp3'):
-                        try:
-                            audio.tags.add(
-                                APIC(
-                                    encoding=3,
-                                    mime='image/jpeg',
-                                    type=3,
-                                    desc='Cover',
-                                    data=img_data
-                                )
-                            )
-                            audio.save()
-                            miniatura_msg = "Miniatura agregada correctamente."
-                        except ID3Error:
-                            miniatura_msg = "No se pudo agregar la miniatura (ID3)."
-                    elif out_file.lower().endswith('.flac'):
-                        pic = Picture()
-                        pic.data = img_data
-                        pic.type = 3
-                        pic.mime = "image/jpeg"
-                        audio.add_picture(pic)
-                        audio.save()
-                        miniatura_msg = "Miniatura agregada correctamente."
-                    elif out_file.lower().endswith(('.m4a', '.mp4', '.aac', '.alac')):
-                        audio.tags["covr"] = [MP4Cover(img_data, imageformat=MP4Cover.FORMAT_JPEG)]
-                        audio.save()
-                        miniatura_msg = "Miniatura agregada correctamente."
-                    else:
-                        miniatura_msg = "Formato de audio no soporta miniatura automática."
-                else:
-                    miniatura_msg = "No se pudo abrir el archivo de audio para agregar miniatura."
-            else:
-                miniatura_msg = "No se encontró miniatura."
+            status_label.config(text="Insertando metadatos...", foreground="blue")
+            ttkwindow.update_idletasks()
+            miniatura_msg = agregar_metadatos_y_miniatura(out_file, yt, img_data)
             status_label.config(text=miniatura_msg, foreground="green")
         except Exception as e:
             miniatura_msg = f"No se pudo agregar la miniatura: {e}"
             status_label.config(text="¡Descarga finalizada (sin miniatura)!", foreground="orange")
+
         status_label.config(text="¡Descarga finalizada!", foreground="green")
         mostrar_info(f"Descarga completada en:\n{out_file}\n{miniatura_msg}")
 
@@ -264,7 +367,7 @@ def cargar_formatos():
         tipo_combo.config(state='readonly')
         return
 
-    # --- Miniatura (igual que antes) ---
+    # --- Miniatura ---
     try:
         thumb_url = getattr(yt_temp, "thumbnail_url", None) or getattr(yt_temp, "thumbnail", None)
         if thumb_url:
@@ -390,6 +493,7 @@ def elegir_ubicacion():
     carpeta = filedialog.askdirectory()
     if carpeta:
         ubicacion_var.set(carpeta)
+        guardar_ultima_carpeta(carpeta)
 
 # Configuración de la ventana principal
 ttkwindow = ttk.Window(themename="flatly")
@@ -514,33 +618,31 @@ ultima = cargar_ultima_carpeta()
 if ultima:
     ubicacion_var.set(ultima)
 
-# Footer bonito y profesional
-def on_enter_footer(event):
-    footer.config(font=("Segoe UI", 11, "italic underline"), foreground="#00BFFF")
+# Footer con fondo oscuro usando Frame + Label (para que el bg se vea)
+footer_frame = ttk.Frame(frame)
+footer_frame.grid(row=10, column=0, columnspan=3, pady=(10, 10), sticky="ew")
+footer_frame.columnconfigure(0, weight=1)
 
-def on_leave_footer(event):
-    footer.config(font=("Segoe UI", 11, "italic"), foreground="#FFFFFF")
-
-# Separador con espacio adicional para mejorar la estética
-separator = ttk.Separator(frame, orient="horizontal")
-separator.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(15, 0))
-
-# Footer centrado y con fondo oscuro y color destacado
-footer = ttk.Label(
-    frame,
+footer_label = Label(footer_frame,
     text="Hecho por JOMB S.A.S | Visita nuestro sitio web",
-    background="#2E0E4B",
-    foreground="#FFFFFF",
+    bg="#2E0E4B",
+    fg="#FFFFFF",
     font=("Segoe UI", 11, "italic"),
     cursor="hand2",
     anchor="center",
-    padding=8
+    padx=8, pady=6
 )
-footer.grid(row=10, column=0, columnspan=3, pady=(10, 10), sticky="ew")
+footer_label.grid(sticky="ew")
 
-footer.bind("<Button-1>", lambda e: webbrowser.open_new("https://jhojanomb.github.io/JOMB/"))
-footer.bind("<Enter>", on_enter_footer)
-footer.bind("<Leave>", on_leave_footer)
+def _on_enter_footer(event):
+    footer_label.config(font=("Segoe UI", 11, "italic underline"), fg="#92B5C1")
+
+def _on_leave_footer(event):
+    footer_label.config(font=("Segoe UI", 11, "italic"), fg="#FFFFFF")
+
+footer_label.bind("<Button-1>", lambda e: webbrowser.open_new("https://jhojanomb.github.io/JOMB/"))
+footer_label.bind("<Enter>", _on_enter_footer)
+footer_label.bind("<Leave>", _on_leave_footer)
 
 # Iniciar aplicación
 ttkwindow.mainloop()
