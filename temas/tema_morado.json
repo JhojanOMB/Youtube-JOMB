@@ -1,10 +1,16 @@
 {
-  "CTk": {
-    "fg_color": ["#EDE7F6", "#1A1527"], 
-    "progressbar_color": ["#673AB7", "#7E57C2"],
-    "button_color": ["#7E57C2", "#9575CD"],
-    "button_hover_color": ["#5E35B1", "#7E57C2"],
-    "entry_border_color": ["#9575CD", "#7E57C2"],
-    "menu_color": ["#D1C4E9", "#311B92"]
+  "appearance_mode": "dark",
+  "color_scheme": {
+    "CTk": {
+      "fg_color": ["#0E0713", "#1A1527"],
+      "fg_color2": ["#121017", "#241832"],
+      "border_color": ["#2E1636", "#2E1636"],
+      "menu_color": ["#2A1630", "#2A1630"],
+      "text_color": ["#EDE7F6", "#EDE7F6"],
+      "progressbar_color": ["#7E57C2", "#7E57C2"],
+      "button_color": ["#6C4AB6", "#7E57C2"],
+      "button_hover_color": ["#5E35B1", "#5E35B1"],
+      "entry_border_color": ["#633AA6", "#633AA6"]
+    }
   }
 }
