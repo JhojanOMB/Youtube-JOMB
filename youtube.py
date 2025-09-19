@@ -7,7 +7,6 @@ import subprocess
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from pytubefix import YouTube
-from customtkinter import *
 from tkinter import filedialog, messagebox, PhotoImage, Label, Toplevel
 import webbrowser
 import re
@@ -635,7 +634,7 @@ footer_label = Label(footer_frame,
 footer_label.grid(sticky="ew")
 
 def _on_enter_footer(event):
-    footer_label.config(font=("Segoe UI", 11, "italic underline"), fg="#92B5C1")
+    footer_label.config(font=("Segoe UI", 11, "italic underline"), fg="#00BFFF")
 
 def _on_leave_footer(event):
     footer_label.config(font=("Segoe UI", 11, "italic"), fg="#FFFFFF")

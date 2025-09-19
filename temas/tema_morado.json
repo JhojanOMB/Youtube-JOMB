@@ -1,0 +1,10 @@
+{
+  "CTk": {
+    "fg_color": ["#EDE7F6", "#1A1527"], 
+    "progressbar_color": ["#673AB7", "#7E57C2"],
+    "button_color": ["#7E57C2", "#9575CD"],
+    "button_hover_color": ["#5E35B1", "#7E57C2"],
+    "entry_border_color": ["#9575CD", "#7E57C2"],
+    "menu_color": ["#D1C4E9", "#311B92"]
+  }
+}
