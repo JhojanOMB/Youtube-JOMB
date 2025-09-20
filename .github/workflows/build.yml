@@ -86,14 +86,13 @@ jobs:
       run: |
         if (Test-Path installer) { Get-ChildItem installer -Force } else { Write-Host "No existe carpeta installer/" }
 
-    - name: Crear Release (solo el instalador)
-      id: release
+    - name: Crear Release y subir instalador
       uses: ncipollo/release-action@v1
       with:
         tag: v${{ steps.get_version.outputs.version }}
-        name: Youtube-JOMB
-        files: installer/*.exe
-        draft: false
-        prerelease: false
+        name: Release v${{ steps.get_version.outputs.version }}
+        artifacts: installer/Youtube-JOMB_${{ steps.get_version.outputs.version }}.exe
+        allowUpdates: true
+        replacesArtifacts: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
