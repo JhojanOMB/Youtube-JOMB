@@ -1,12 +1,10 @@
 name: Youtube JOMB
 
-# Ejecuta en cada push a main o manualmente desde Actions
 on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
 
-# Permitimos que el workflow escriba contenido (necesario para crear releases/tags)
 permissions:
   contents: write
 
@@ -16,82 +14,86 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    # ---- 1) Obtener el código ----
     - name: Checkout (obtener código)
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    # ---- 2) Leer VERSION (archivo en la raíz) ----
-    - name: Obtener versión desde archivo VERSION
+    - name: Leer VERSION
       id: get_version
       shell: pwsh
       run: |
+        if (-not (Test-Path VERSION)) { Write-Error "Falta archivo VERSION en la raíz (ej: 1.2.1)"; exit 1 }
         $v = (Get-Content VERSION -Raw).Trim()
-        if (-not $v) { Write-Error "El archivo VERSION está vacío o no existe" }
+        if (-not $v) { Write-Error "El archivo VERSION está vacío"; exit 1 }
         echo "version=$v" >> $env:GITHUB_OUTPUT
+        Write-Host "Usando VERSION: $v"
 
-    # ---- 3) Preparar Python ----
-    - name: Configurar Python
+    - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: "3.11"
 
-    # ---- 4) Instalar dependencias de Python ----
     - name: Instalar dependencias (pip) y PyInstaller
+      shell: pwsh
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        if (Test-Path requirements.txt) { pip install -r requirements.txt } else { Write-Host "No hay requirements.txt; instalando pyinstaller únicamente" }
         pip install pyinstaller
 
-    # ---- 5) Limpiar builds/archivos previos ----
-    - name: Limpiar build/dist anteriores y exe previa
+    - name: Limpiar artefactos previos
       shell: pwsh
       run: |
         Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
-        Remove-Item -Force youtube.spec -ErrorAction SilentlyContinue
-        Remove-Item -Force youtube.exe -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+        Remove-Item -Force *.spec -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force installer -ErrorAction SilentlyContinue
 
-    # ---- 6) Construir .exe con PyInstaller y dejarlo en la raíz ----
-    - name: Construir exe con PyInstaller (salida en la raíz)
-      run: |
-        pyinstaller --onefile --windowed --icon=icono.ico --name youtube --distpath . youtube.py
-
-    # ---- 7) Mostrar archivos generados (debug) ----
-    - name: Listar archivos en la raíz y verificar youtube.exe
+    - name: Construir exe con PyInstaller (genera dist\youtube.exe)
       shell: pwsh
       run: |
-        Get-ChildItem -Path . -Filter youtube.exe -ErrorAction SilentlyContinue | Format-List
-        if (-not (Test-Path -Path "./youtube.exe")) {
-          Write-Error "No se generó youtube.exe en la raíz"
+        # Cambia 'youtube.py' por el nombre real si es otro
+        pyinstaller --onefile --windowed --icon=icono.ico youtube.py
+
+    - name: Verificar exe (dist\youtube.exe)
+      shell: pwsh
+      run: |
+        if (-not (Test-Path .\dist\youtube.exe)) {
+          Write-Host "Listado carpeta dist:"; Get-ChildItem -Force dist -ErrorAction SilentlyContinue
+          Write-Error "No se generó dist\\youtube.exe. Revisa PyInstaller o el nombre del script."
         } else {
-          Write-Host "youtube.exe generado correctamente"
+          Write-Host "dist\\youtube.exe generado correctamente."
         }
 
-    # ---- 8) Instalar Inno Setup (choco) ----
+    - name: Crear carpeta installer (asegurar)
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path installer | Out-Null
+
     - name: Instalar Inno Setup (choco)
+      shell: pwsh
       run: choco install innosetup -y
 
-    # ---- 9) Construir instalador con Inno Setup (pasando la versión) ----
-    - name: Construir instalador con Inno Setup
+    - name: Ejecutar Inno Setup (ISCC) con la versión
       shell: pwsh
       run: |
         $ver = "${{ steps.get_version.outputs.version }}"
-        Write-Host "Construyendo instalador versión $ver"
-        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_script.iss "/DMyAppVersion=$ver"
+        Write-Host "Compilando instalador con MyAppVersion=$ver"
+        $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+        if (-not (Test-Path $iscc)) { Write-Error "ISCC.exe no encontrado en $iscc"; exit 1 }
+        # Ejecutamos el .iss (que debe apuntar a dist\youtube.exe); además le pasamos la versión por variable preproc
+        & $iscc installer_script.iss "/DMyAppVersion=$ver"
 
-    # ---- 10) Listar installer/ para debug ----
-    - name: Listar carpeta installer
+    - name: Mostrar carpeta installer (debug)
       shell: pwsh
       run: |
-        if (Test-Path installer) { Get-ChildItem installer | Format-List } else { Write-Host "No existe carpeta installer aún" }
+        if (Test-Path installer) { Get-ChildItem installer -Force } else { Write-Host "No existe carpeta installer/" }
 
-    # ---- 11) Crear Release y subir SOLO el installer exe ----
-    - name: Crear Release y subir instalador
+    - name: Crear Release (solo el instalador)
+      id: release
       uses: ncipollo/release-action@v1
       with:
         tag: v${{ steps.get_version.outputs.version }}
-        name: Release v${{ steps.get_version.outputs.version }}
-        files: installer/YouTubeDownloaderSetup_${{ steps.get_version.outputs.version }}.exe
+        name: Youtube-JOMB
+        files: installer/*.exe
         draft: false
         prerelease: false
       env:

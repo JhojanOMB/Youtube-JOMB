@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-# youtube_app.py
-# Descargador YouTube - CustomTkinter, portada robusta, settings gear, check updates (GitHub)
-
+# youtube.py - Descargador de YouTube - hecho por JOMB
 import os
 import sys
 import tempfile

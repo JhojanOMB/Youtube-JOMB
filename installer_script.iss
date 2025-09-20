@@ -1,29 +1,27 @@
-#ifndef MyAppVersion
 #define MyAppVersion "0.0.0"
-#endif
 
 [Setup]
-AppName=YouTube Downloader - JOMB
+AppName=Youtube-JOMB
 AppVersion={#MyAppVersion}
 AppPublisher=JOMB S.A.S
-DefaultDirName={autopf}\YouTube Downloader
-DefaultGroupName=YouTube Downloader
+DefaultDirName={autopf}\Youtube-JOMB
+DefaultGroupName=Youtube-JOMB
 Compression=lzma
 SolidCompression=yes
 OutputDir=installer
-OutputBaseFilename=YouTubeDownloaderSetup_{#MyAppVersion}
+OutputBaseFilename=Youtube-JOMB_{#MyAppVersion}
 DisableProgramGroupPage=yes
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Files]
-; Busca youtube.exe en la raíz del repo (generado por pyinstaller --distpath .)
-Source: "youtube.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Tomamos el exe generado por PyInstaller en dist\youtube.exe
+Source: "dist\youtube.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\YouTube Downloader"; Filename: "{app}\youtube.exe"
-Name: "{userdesktop}\YouTube Downloader"; Filename: "{app}\youtube.exe"
+Name: "{group}\Youtube-JOMB"; Filename: "{app}\youtube.exe"
+Name: "{userdesktop}\Youtube-JOMB"; Filename: "{app}\youtube.exe"
 
 [Run]
-Filename: "{app}\youtube.exe"; Description: "Abrir YouTube Downloader"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\youtube.exe"; Description: "Abrir Youtube-JOMB"; Flags: nowait postinstall skipifsilent
