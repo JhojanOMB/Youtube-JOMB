@@ -1,4 +1,6 @@
+#ifndef MyAppVersion
 #define MyAppVersion "0.0.0"
+#endif
 
 [Setup]
 AppName=YouTube Downloader - JOMB
@@ -16,8 +18,8 @@ DisableProgramGroupPage=yes
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Files]
-; Aquí copiamos el exe generado por PyInstaller
-Source: "dist\youtube.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Busca youtube.exe en la raíz del repo (generado por pyinstaller --distpath .)
+Source: "youtube.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\YouTube Downloader"; Filename: "{app}\youtube.exe"

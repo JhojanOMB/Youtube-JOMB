@@ -42,68 +42,50 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    # ---- 5) Incrustar versión en un archivo para que el exe la tenga ----
-    - name: Embed version into source (version.py)
-      shell: pwsh
-      run: |
-        $v = "${{ steps.get_version.outputs.version }}"
-        Write-Host "Embedding version $v into version.py"
-        "VERSION = '$v'" | Out-File -Encoding UTF8 version.py
-
-    # ---- 6) Limpiar builds anteriores (opcional pero recomendado) ----
-    - name: Limpiar build/dist anteriores
+    # ---- 5) Limpiar builds/archivos previos ----
+    - name: Limpiar build/dist anteriores y exe previa
       shell: pwsh
       run: |
         Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
+        Remove-Item -Force youtube.spec -ErrorAction SilentlyContinue
+        Remove-Item -Force youtube.exe -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
-        Remove-Item -Force *.spec -ErrorAction SilentlyContinue
 
-    # ---- 7) Construir .exe con PyInstaller ----
-    - name: Construir exe con PyInstaller
+    # ---- 6) Construir .exe con PyInstaller y dejarlo en la raíz ----
+    - name: Construir exe con PyInstaller (salida en la raíz)
       run: |
-        pyinstaller --onefile --windowed --icon=icono.ico youtube.py
+        pyinstaller --onefile --windowed --icon=icono.ico --name youtube --distpath . youtube.py
 
-    # ---- 8) Mostrar archivos generados (debug) ----
-    - name: Listar dist/ y archivos
-      run: |
-        dir dist
-        dir
+    # ---- 7) Mostrar archivos generados (debug) ----
+    - name: Listar archivos en la raíz y verificar youtube.exe
       shell: pwsh
+      run: |
+        Get-ChildItem -Path . -Filter youtube.exe -ErrorAction SilentlyContinue | Format-List
+        if (-not (Test-Path -Path "./youtube.exe")) {
+          Write-Error "No se generó youtube.exe en la raíz"
+        } else {
+          Write-Host "youtube.exe generado correctamente"
+        }
 
-    # ---- 9) Instalar Inno Setup (choco) ----
+    # ---- 8) Instalar Inno Setup (choco) ----
     - name: Instalar Inno Setup (choco)
       run: choco install innosetup -y
 
-    # ---- 10) Construir el instalador con Inno Setup ----
+    # ---- 9) Construir instalador con Inno Setup (pasando la versión) ----
     - name: Construir instalador con Inno Setup
       shell: pwsh
       run: |
         $ver = "${{ steps.get_version.outputs.version }}"
         Write-Host "Construyendo instalador versión $ver"
-        # Ejecutamos ISCC (asegúrate que installer_script.iss está en la raíz del repo)
         & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_script.iss "/DMyAppVersion=$ver"
 
-    # ---- 11) Verificar que el instalador existe (si no existe fallamos el job) ----
-    - name: Verificar instalador creado
+    # ---- 10) Listar installer/ para debug ----
+    - name: Listar carpeta installer
       shell: pwsh
       run: |
-        $ver = "${{ steps.get_version.outputs.version }}"
-        $installer = "installer\YouTubeDownloaderSetup_$ver.exe"
-        Write-Host "Buscando instalador en: $installer"
-        if (-not (Test-Path $installer)) {
-          Write-Host "ERROR: No se encontró instalador en $installer"
-          Write-Host "Contenido de la carpeta installer (si existe):"
-          if (Test-Path "installer") {
-            Get-ChildItem -Path installer -Force -Recurse | Format-List
-          } else {
-            Write-Host "La carpeta installer no existe."
-          }
-          Write-Error "Instalador no encontrado. Fallando el job."
-        } else {
-          Write-Host "Instalador encontrado: $installer"
-        }
+        if (Test-Path installer) { Get-ChildItem installer | Format-List } else { Write-Host "No existe carpeta installer aún" }
 
-    # ---- 12) Crear Release en GitHub y subir SOLO el instalador ----
+    # ---- 11) Crear Release y subir SOLO el installer exe ----
     - name: Crear Release y subir instalador
       uses: ncipollo/release-action@v1
       with:
