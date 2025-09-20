@@ -1,4 +1,4 @@
-name: Build & Create Installer
+name: Youtube JOMB
 
 # Ejecuta en cada push a main o manualmente desde Actions
 on:
@@ -42,7 +42,15 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    # ---- 5) Limpiar builds anteriores ----
+    # ---- 5) Incrustar versión en un archivo para que el exe la tenga ----
+    - name: Embed version into source (version.py)
+      shell: pwsh
+      run: |
+        $v = "${{ steps.get_version.outputs.version }}"
+        Write-Host "Embedding version $v into version.py"
+        "VERSION = '$v'" | Out-File -Encoding UTF8 version.py
+
+    # ---- 6) Limpiar builds anteriores (opcional pero recomendado) ----
     - name: Limpiar build/dist anteriores
       shell: pwsh
       run: |
@@ -50,29 +58,52 @@ jobs:
         Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
         Remove-Item -Force *.spec -ErrorAction SilentlyContinue
 
-    # ---- 6) Construir .exe con PyInstaller ----
+    # ---- 7) Construir .exe con PyInstaller ----
     - name: Construir exe con PyInstaller
       run: |
         pyinstaller --onefile --windowed --icon=icono.ico youtube.py
 
-    # ---- 7) Mostrar archivos generados (debug) ----
+    # ---- 8) Mostrar archivos generados (debug) ----
     - name: Listar dist/ y archivos
-      run: dir dist
+      run: |
+        dir dist
+        dir
       shell: pwsh
 
-    # ---- 8) Instalar Inno Setup (para crear instalador bonito) ----
+    # ---- 9) Instalar Inno Setup (choco) ----
     - name: Instalar Inno Setup (choco)
       run: choco install innosetup -y
 
-    # ---- 9) Construir el instalador con Inno Setup ----
+    # ---- 10) Construir el instalador con Inno Setup ----
     - name: Construir instalador con Inno Setup
       shell: pwsh
       run: |
         $ver = "${{ steps.get_version.outputs.version }}"
         Write-Host "Construyendo instalador versión $ver"
+        # Ejecutamos ISCC (asegúrate que installer_script.iss está en la raíz del repo)
         & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_script.iss "/DMyAppVersion=$ver"
 
-    # ---- 10) Crear Release en GitHub y subir SOLO el instalador ----
+    # ---- 11) Verificar que el instalador existe (si no existe fallamos el job) ----
+    - name: Verificar instalador creado
+      shell: pwsh
+      run: |
+        $ver = "${{ steps.get_version.outputs.version }}"
+        $installer = "installer\YouTubeDownloaderSetup_$ver.exe"
+        Write-Host "Buscando instalador en: $installer"
+        if (-not (Test-Path $installer)) {
+          Write-Host "ERROR: No se encontró instalador en $installer"
+          Write-Host "Contenido de la carpeta installer (si existe):"
+          if (Test-Path "installer") {
+            Get-ChildItem -Path installer -Force -Recurse | Format-List
+          } else {
+            Write-Host "La carpeta installer no existe."
+          }
+          Write-Error "Instalador no encontrado. Fallando el job."
+        } else {
+          Write-Host "Instalador encontrado: $installer"
+        }
+
+    # ---- 12) Crear Release en GitHub y subir SOLO el instalador ----
     - name: Crear Release y subir instalador
       uses: ncipollo/release-action@v1
       with:
