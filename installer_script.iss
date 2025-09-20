@@ -1,8 +1,17 @@
-#define MyAppVersion "0.0.0"
+; installer_script.iss
+#ifndef MyAppVersion
+  #define MyAppVersion "0.0.0"
+#endif
+
+#ifndef MyAppVerName
+  #define MyAppVerName MyAppVersion
+#endif
 
 [Setup]
+; AppName y versión (aseguro AppVersion y AppVerName ambos presentes)
 AppName=Youtube-JOMB
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppVerName}
 AppPublisher=JOMB S.A.S
 DefaultDirName={autopf}\Youtube-JOMB
 DefaultGroupName=Youtube-JOMB
@@ -16,7 +25,7 @@ DisableProgramGroupPage=yes
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Files]
-; Tomamos el exe generado por PyInstaller en dist\youtube.exe
+; Asegúrate de que pyinstaller creó dist\youtube.exe
 Source: "dist\youtube.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

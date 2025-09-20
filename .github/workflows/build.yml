@@ -47,10 +47,9 @@ jobs:
         Remove-Item -Force *.spec -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force installer -ErrorAction SilentlyContinue
 
-    - name: Construir exe con PyInstaller (genera dist\youtube.exe)
+    - name: Construir exe con PyInstaller (genera solo el Youtube_JOMB.exe)
       shell: pwsh
       run: |
-        # Cambia 'youtube.py' por el nombre real si es otro
         pyinstaller --onefile --windowed --icon=icono.ico youtube.py
 
     - name: Verificar exe (dist\youtube.exe)
