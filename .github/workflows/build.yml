@@ -21,7 +21,7 @@ jobs:
       id: get_version
       shell: pwsh
       run: |
-        if (-not (Test-Path VERSION)) { Write-Error "Falta archivo VERSION en la raíz (ej: 1.2.1)"; exit 1 }
+        if (-not (Test-Path VERSION)) { Write-Error "Falta archivo VERSION en la raíz (ej: 2.6)" ; exit 1 }
         $v = (Get-Content VERSION -Raw).Trim()
         if (-not $v) { Write-Error "El archivo VERSION está vacío"; exit 1 }
         echo "version=$v" >> $env:GITHUB_OUTPUT
@@ -36,7 +36,11 @@ jobs:
       shell: pwsh
       run: |
         python -m pip install --upgrade pip
-        if (Test-Path requirements.txt) { pip install -r requirements.txt } else { Write-Host "No hay requirements.txt; instalando pyinstaller únicamente" }
+        if (Test-Path requirements.txt) {
+          pip install -r requirements.txt
+        } else {
+          Write-Host "No hay requirements.txt; instalando pyinstaller únicamente"
+        }
         pip install pyinstaller
 
     - name: Limpiar artefactos previos
@@ -47,25 +51,31 @@ jobs:
         Remove-Item -Force *.spec -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force installer -ErrorAction SilentlyContinue
 
-    - name: Construir exe con PyInstaller (genera solo el Youtube_JOMB.exe)
+    - name: Construir exe con PyInstaller
       shell: pwsh
       run: |
-        pyinstaller --onefile --windowed --add-data "VERSION;." --icon=icono.ico youtube.py
+        pyinstaller ^
+          --onefile ^
+          --windowed ^
+          --name "Youtube_JOMB" ^
+          --add-data "VERSION;." ^
+          --add-data "iconos;iconos" ^
+          --icon=iconos/icono.ico ^
+          youtube.py
 
-    - name: Verificar exe (dist\youtube.exe)
+    - name: Verificar exe (dist\Youtube_JOMB.exe)
       shell: pwsh
       run: |
-        if (-not (Test-Path .\dist\youtube.exe)) {
+        if (-not (Test-Path .\dist\Youtube_JOMB.exe)) {
           Write-Host "Listado carpeta dist:"; Get-ChildItem -Force dist -ErrorAction SilentlyContinue
-          Write-Error "No se generó dist\\youtube.exe. Revisa PyInstaller o el nombre del script."
+          Write-Error "No se generó dist\\Youtube_JOMB.exe. Revisa PyInstaller o el nombre del script."
         } else {
-          Write-Host "dist\\youtube.exe generado correctamente."
+          Write-Host "dist\\Youtube_JOMB.exe generado correctamente."
         }
 
-    - name: Crear carpeta installer (asegurar)
+    - name: Crear carpeta installer
       shell: pwsh
-      run: |
-        New-Item -ItemType Directory -Force -Path installer | Out-Null
+      run: New-Item -ItemType Directory -Force -Path installer | Out-Null
 
     - name: Instalar Inno Setup (choco)
       shell: pwsh
@@ -78,7 +88,6 @@ jobs:
         Write-Host "Compilando instalador con MyAppVersion=$ver"
         $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
         if (-not (Test-Path $iscc)) { Write-Error "ISCC.exe no encontrado en $iscc"; exit 1 }
-        # Ejecutamos el .iss (que debe apuntar a dist\youtube.exe); además le pasamos la versión por variable preproc
         & $iscc installer_script.iss "/DMyAppVersion=$ver"
 
     - name: Mostrar carpeta installer (debug)
