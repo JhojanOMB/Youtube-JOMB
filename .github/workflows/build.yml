@@ -50,7 +50,7 @@ jobs:
     - name: Construir exe con PyInstaller (genera solo el Youtube_JOMB.exe)
       shell: pwsh
       run: |
-        pyinstaller --onefile --windowed --icon=icono.ico youtube.py
+        pyinstaller --onefile --windowed --add-data "VERSION;." --icon=icono.ico youtube.py
 
     - name: Verificar exe (dist\youtube.exe)
       shell: pwsh
