@@ -30,7 +30,8 @@ Source: "dist\Youtube-JOMB.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\Youtube JOMB"; Filename: "{app}\Youtube-JOMB.exe"
-Name: "{desktop}\Youtube JOMB"; Filename: "{app}\Youtube-JOMB.exe"
+Name: "{userdesktop}\Youtube JOMB"; Filename: "{app}\Youtube-JOMB.exe"
+
 
 [Run]
 Filename: "{app}\Youtube-JOMB.exe"; Description: "Abrir Youtube-JOMB"; Flags: nowait postinstall skipifsilent
