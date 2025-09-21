@@ -25,12 +25,12 @@ DisableProgramGroupPage=yes
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Files]
-; Asegúrate de que pyinstaller creó dist\youtube.exe
-Source: "dist\youtube.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Copia el ejecutable compilado
+Source: "dist\Youtube-JOMB.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Youtube-JOMB"; Filename: "{app}\youtube.exe"
-Name: "{userdesktop}\Youtube-JOMB"; Filename: "{app}\youtube.exe"
+Name: "{autoprograms}\Youtube JOMB"; Filename: "{app}\Youtube-JOMB.exe"
+Name: "{desktop}\Youtube JOMB"; Filename: "{app}\Youtube-JOMB.exe"
 
 [Run]
-Filename: "{app}\youtube.exe"; Description: "Abrir Youtube-JOMB"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Youtube-JOMB.exe"; Description: "Abrir Youtube-JOMB"; Flags: nowait postinstall skipifsilent
