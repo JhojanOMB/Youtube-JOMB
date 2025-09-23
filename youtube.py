@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-# youtube.py - Descargador de YouTube - JOMB (responsive + padding + iconos en carpeta iconos/)
+# youtube.py - Descargador de YouTube - JOMB
+# Ajustado: "Guardar como" usa título original, guarda solo tema y última carpeta.
 import os
 import sys
+import json
 import tempfile
 import imageio_ffmpeg as ffmpeg
 import subprocess
@@ -18,6 +20,7 @@ import platform
 import requests
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, PhotoImage, Toplevel
+from config import cargar_config, guardar_config
 
 from mutagen import File
 from mutagen.id3 import ID3, APIC, TIT2, TPE1, TDRC, ID3NoHeaderError
@@ -25,39 +28,86 @@ from mutagen.flac import FLAC, Picture
 from mutagen.mp4 import MP4, MP4Cover
 
 # ---------------- Config ----------------
+config = cargar_config()
 GITHUB_REPO = "JhojanOMB/Youtube-JOMB"
 VERSION_FILE = "VERSION"
 THEME_DARK_JSON = "temas/tema_morado.json"
-ICON_DIR = "iconos" # carpeta de iconos
+ICON_DIR = "iconos"  # carpeta de iconos
 # ----------------------------------------------------------------
 
-# ---------------- Theme inicial ----------------
+# ---------------- Appearance / UI constants ----------------
 APPEARANCE_DARK = "dark"
 APPEARANCE_LIGHT = "light"
-THEME_LIGHT = "blue"
 
+PAD_X = 12
+PAD_Y = 8
+ENTRY_H = 38
+BTN_H = 36
+THUMB_SIZE = 140
+
+# ---------------- Storage y config ----------------
+def get_storage_dir():
+    try:
+        if platform.system().lower().startswith("win"):
+            base = os.getenv("APPDATA") or os.path.expanduser("~")
+            d = os.path.join(base, "Youtube-JOMB")
+        else:
+            d = os.path.join(os.path.expanduser("~"), ".youtube_jomb")
+        os.makedirs(d, exist_ok=True)
+        return d
+    except:
+        return os.getcwd()
+
+STORAGE_DIR = get_storage_dir()
+CONFIG_PATH = os.path.join(STORAGE_DIR, "config.json")
+
+DEFAULT_CONFIG = {
+    "theme": "Oscuro",     # "Oscuro" o "Claro"
+    "last_folder": ""      # última carpeta seleccionada
+}
+
+def load_config():
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                c = json.load(f)
+                out = DEFAULT_CONFIG.copy()
+                out.update(c)
+                return out
+    except Exception:
+        pass
+    return DEFAULT_CONFIG.copy()
+
+def save_config(cfg):
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print("No se pudo guardar config:", e)
+
+config = load_config()
+
+# ---------------- Appearance init ----------------
 try:
-    ctk.set_appearance_mode(APPEARANCE_DARK)
-    if os.path.exists(THEME_DARK_JSON):
-        ctk.set_default_color_theme(THEME_DARK_JSON)
+    if config.get("theme", "Oscuro") == "Oscuro":
+        ctk.set_appearance_mode(APPEARANCE_DARK)
+        if os.path.exists(THEME_DARK_JSON):
+            ctk.set_default_color_theme(THEME_DARK_JSON)
+        else:
+            ctk.set_default_color_theme("dark-blue")
     else:
-        ctk.set_default_color_theme("dark-blue")
+        ctk.set_appearance_mode(APPEARANCE_LIGHT)
 except Exception:
     ctk.set_appearance_mode(APPEARANCE_DARK)
     ctk.set_default_color_theme("dark-blue")
 
 # ----------------------------------------------------------------
 ffmpeg_path = ffmpeg.get_ffmpeg_exe()
-
 formato_audio_preferido = 'mp3'
 formato_video_preferido = 'mp4'
 
-# UI layout constants 
-PAD_X = 10
-PAD_Y = 6
-ENTRY_H = 36
-BTN_H = 36
-THUMB_SIZE = 140
+# Utility: evitar ventana consola en subprocess en Windows
+NO_CONSOLE = 0x08000000 if platform.system().lower().startswith("win") else 0
 
 def tiene_conexion():
     try:
@@ -112,9 +162,9 @@ def is_newer_version(remote, local):
 # ---------------- Utilidades (conversión / metadatos / miniatura) ----------------
 def on_progress(stream, chunk, bytes_remaining):
     try:
-        total = stream.filesize
-        downloaded = total - bytes_remaining
-        percent = downloaded / total * 100 if total else 0
+        total = getattr(stream, "filesize", 0)
+        downloaded = total - bytes_remaining if total else 0
+        percent = (downloaded / total * 100) if total else 0
         try:
             progress_bar.set(percent/100.0)
             status_label.configure(text=f"Descargando... {percent:.1f}%")
@@ -123,7 +173,7 @@ def on_progress(stream, chunk, bytes_remaining):
     except Exception:
         pass
 
-def limpiar_nombre(nombre):
+def limpiar_nombre_simple(nombre):
     return re.sub(r'[<>:"/\\|?*]', '', str(nombre) if nombre else '')
 
 def convertir(input_path, output_path, bitrate=None):
@@ -143,7 +193,10 @@ def convertir(input_path, output_path, bitrate=None):
             if bitrate:
                 cmd += ['-b:a', bitrate]
         cmd.append(output_path)
-        subprocess.run(cmd, check=True)
+        run_kwargs = {"check": True}
+        if NO_CONSOLE:
+            run_kwargs["creationflags"] = NO_CONSOLE
+        subprocess.run(cmd, **run_kwargs)
         try: os.remove(input_path)
         except: pass
     except subprocess.CalledProcessError as e:
@@ -302,24 +355,21 @@ def mostrar_info(mensaje, title="Éxito"):
     except:
         messagebox.showinfo(title, mensaje)
 
-# ---------------- Guardar/cargar última carpeta ----------------
+# ---------------- Guardar/cargar última carpeta (persistida en config) ----------------
 def guardar_ultima_carpeta(path):
     try:
-        with open("ultima_carpeta.txt", "w", encoding="utf-8") as f:
-            f.write(path)
+        config["last_folder"] = path or ""
+        save_config(config)
     except Exception as e:
-        print("No se pudo guardar la última carpeta:", e)
+        print("No se pudo guardar la última carpeta en config:", e)
 
 def cargar_ultima_carpeta():
     try:
-        if os.path.exists("ultima_carpeta.txt"):
-            with open("ultima_carpeta.txt", "r", encoding="utf-8") as f:
-                return f.read().strip()
-    except Exception as e:
-        print("No se pudo cargar la última carpeta:", e)
-    return ""
+        return config.get("last_folder", "") or ""
+    except:
+        return ""
 
-# ---------------- GitHub updates helpers ----------------
+# ---------------- GitHub updates helpers (iguales) ----------------
 def get_github_latest_release(repo, token=None):
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     headers = {'Accept': 'application/vnd.github.v3+json'}
@@ -386,7 +436,7 @@ def check_for_updates_background(show_ui=True):
         if is_newer_version(remote_version, LOCAL_VERSION):
             if show_ui:
                 ask = messagebox.askyesno("Actualización disponible",
-                                          f"Hay una nueva versión disponible: {remote_version}\nTu versión: {LOCAL_VERSION}\n\n¿Deseas descargar e instalar ahora?")
+                                        f"Hay una nueva versión disponible: {remote_version}\nTu versión: {LOCAL_VERSION}\n\n¿Deseas descargar e instalar ahora?")
             else:
                 ask = True
             if not ask:
@@ -475,14 +525,14 @@ def strip_known_extension(name):
             return base
     return name
 
-# ---------------- cargar formatos (auto-fetch con debounce) ----------------
+# Debounce / state para cargar formatos
 _last_fetch_ts = 0
 user_edited = {'val': False}
 programmatic_set = {'val': False}
 
 def set_save_as_programmatic(val):
     programmatic_set['val'] = True
-    val_clean = strip_known_extension(val)
+    val_clean = strip_known_extension(limpiar_nombre_simple(val))
     save_as_var.set(val_clean)
     programmatic_set['val'] = False
 
@@ -496,16 +546,19 @@ def _on_save_as_changed(*args):
             programmatic_set['val'] = False
         user_edited['val'] = True
 
-def update_default_filename_from_parsed(parsed_title, formato_ext):
-    if not parsed_title:
+def update_default_filename_from_original(original_title):
+    """Establece 'Guardar como' con el título original (quitando chars inválidos).
+        Si el usuario editó manualmente, solo se actualiza si es una nueva búsqueda.
+    """
+    if not original_title:
         return
-    base = limpiar_nombre(parsed_title)
+    base = limpiar_nombre_simple(original_title).strip()
     if not base:
         base = "video"
-    candidate = base
-    if not user_edited['val']:
-        set_save_as_programmatic(candidate)
+    if not user_edited['val']:  # solo si no está marcado como editado manual
+        set_save_as_programmatic(base)
 
+# ---------------- cargar formatos (auto-fetch con debounce) ----------------
 def cargar_formatos(debounce_ms=600):
     global _last_fetch_ts
     now = time.time() * 1000
@@ -517,6 +570,7 @@ def cargar_formatos(debounce_ms=600):
         mostrar_error("No hay conexión a Internet. Por favor verifica tu red Wi-Fi o datos móviles.")
         return
 
+    # bloqueamos inputs visualmente
     entry_url.configure(state='disabled')
     tipo_combo.configure(state='disabled')
     formato_combo.configure(state='disabled')
@@ -540,9 +594,12 @@ def cargar_formatos(debounce_ms=600):
         tipo_combo.configure(state='normal')
         return
 
-    parsed_title, parsed_artist = parse_artist_title(getattr(yt_temp, 'title', None), getattr(yt_temp, 'author', None))
+    # título original
+    original_title = getattr(yt_temp, 'title', None)
+    # actualizamos "guardar como" con el título original si el usuario no lo editó
+    update_default_filename_from_original(original_title)
 
-    # --- Miniatura (square fit) ---
+    # --- Miniatura (cuadrada, fit) ---
     try:
         img_data = fetch_best_thumbnail(yt_temp)
         if img_data:
@@ -615,10 +672,6 @@ def cargar_formatos(debounce_ms=600):
     else:
         formato_var.set('')
 
-    # update default filename using parsed title (no extension)
-    chosen_ext = formato_var.get() or (formato_audio_preferido if tipo=="audio" else formato_video_preferido)
-    update_default_filename_from_parsed(parsed_title or getattr(yt_temp,'title',None) or "video", chosen_ext)
-
     def sort_key_cal(c):
         s = str(c)
         nums = re.sub(r'[^0-9]', '', s)
@@ -639,7 +692,10 @@ def cargar_formatos(debounce_ms=600):
 
     bt_elegir.configure(state='normal')
     btn.configure(state='normal')
-    mostrar_info("Formatos, calidades y miniatura listos.")
+    try:
+        status_label.configure(text="Formatos, calidades y miniatura listos.")
+    except:
+        pass
     entry_url.configure(state='normal')
     tipo_combo.configure(state='normal')
 
@@ -668,122 +724,102 @@ except:
 # layout root responsive
 ttkwindow.rowconfigure(0, weight=1)
 ttkwindow.columnconfigure(0, weight=1)
-ttkwindow.geometry("800x560")
-ttkwindow.minsize(680, 520)
+ttkwindow.geometry("840x600")
+ttkwindow.minsize(720, 520)
 
 # Variables
 url_var = ctk.StringVar()
 tipo_var = ctk.StringVar(value="Audio")
 formato_var = ctk.StringVar()
 calidad_var = ctk.StringVar()
-ubicacion_var = ctk.StringVar()
+ubicacion_var = ctk.StringVar(value=cargar_ultima_carpeta() or "")
 progress_var = ctk.DoubleVar(value=0.0)
 save_as_var = ctk.StringVar()
 save_as_var.trace_add("write", _on_save_as_changed)
 
-# Main frame — use grid so resizing es más controlable
+# Main frame — use grid
 frame = ctk.CTkFrame(ttkwindow, corner_radius=12)
-frame.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
-# columns: 0 label, 1 main entry area, 2 mid controls, 3 main entry area 2, 4 thumbnail/btn, 5 gear
+frame.grid(row=0, column=0, sticky="nsew", padx=24, pady=(32,18))
 frame.columnconfigure(0, weight=0, minsize=150)
 frame.columnconfigure(1, weight=3)
 frame.columnconfigure(2, weight=1)
 frame.columnconfigure(3, weight=3)
-frame.columnconfigure(4, weight=0, minsize=THUMB_SIZE+20)
+frame.columnconfigure(4, weight=0, minsize=THUMB_SIZE+24)
 frame.columnconfigure(5, weight=0, minsize=48)
-for r in range(14):
+for r in range(16):
     frame.rowconfigure(r, weight=0)
-frame.rowconfigure(7, weight=1)
-frame.rowconfigure(13, weight=1)
+frame.rowconfigure(8, weight=1)
+frame.rowconfigure(14, weight=1)
 
 # Header: centered title
 title_label = ctk.CTkLabel(frame, text="Descargador de YouTube", font=ctk.CTkFont(size=20, weight="bold"))
-title_label.grid(row=0, column=1, columnspan=3, pady=(0,12))
+title_label.grid(row=0, column=1, columnspan=3, pady=(0,14))
 
-# Gear button image from iconos/configuracion.png
+# Gear icon button
 gear_img = None
 gear_path = os.path.join(ICON_DIR, "configuracion.png")
 try:
     if os.path.exists(gear_path):
         gimg = Image.open(gear_path).convert("RGBA")
-        # ajustar a 28x28 para que no se vea estirada ni muy pequeña
         gimg = ImageOps.fit(gimg, (28, 28), Image.Resampling.LANCZOS)
-        gear_img = ctk.CTkImage(light_image=gimg, dark_image=gimg, size=(18, 18))
-except Exception as e:
-    # si falla la carga del icono, seguimos sin él
+        gear_img = ctk.CTkImage(light_image=gimg, dark_image=gimg, size=(18,18))
+except:
     gear_img = None
 
-# referencia global a la ventana de configuración (singleton)
 settings_window = None
 
 def open_settings():
-    """
-    Abre la ventana de configuración. Si ya está abierta, la trae al frente
-    en lugar de crear una nueva. Cuando se cierra, limpia la referencia.
-    """
     global settings_window
-
-    # Si ya existe y no fue destruida, simplemente la traemos al frente
     try:
         if settings_window is not None and settings_window.winfo_exists():
             try:
-                settings_window.lift()
-                settings_window.focus_force()
+                settings_window.lift(); settings_window.focus_force()
             except:
                 pass
             return
     except:
-        # en caso de error al consultar la ventana, la reiniciamos
         settings_window = None
 
-    # Crear la ventana (CTkToplevel preferido)
     try:
         settings_window = ctk.CTkToplevel(ttkwindow)
-    except Exception:
+    except:
         settings_window = Toplevel(ttkwindow)
-
     settings_window.title("Configuración")
-    settings_window.geometry("460x340")
+    settings_window.geometry("420x340")
     settings_window.transient(ttkwindow)
-
-    # Centrar la ventana de configuración respecto a la principal (si es posible)
     try:
-        x = ttkwindow.winfo_rootx()
-        y = ttkwindow.winfo_rooty()
+        x = ttkwindow.winfo_rootx(); y = ttkwindow.winfo_rooty()
         settings_window.geometry("+%d+%d" % (x + 80, y + 60))
     except:
         pass
 
-    # Al cerrar, destruir y limpiar la referencia para permitir reabrir
     def _on_close():
-        try:
-            settings_window.destroy()
-        except:
-            pass
+        try: settings_window.destroy()
+        except: pass
         finally:
-            # limpiar la referencia (usa global)
             nonlocal_ref_clear()
 
-    # helper para limpiar la referencia desde dentro
     def nonlocal_ref_clear():
         global settings_window
         settings_window = None
 
     settings_window.protocol("WM_DELETE_WINDOW", _on_close)
 
-    # ---------- Contenido de la ventana ----------
-    ctk.CTkLabel(settings_window, text=f"Versión local: {LOCAL_VERSION}", anchor="w").pack(fill="x", padx=12, pady=(12, 6))
+    # -------------------------
+    # Info versión local
+    # -------------------------
+    ctk.CTkLabel(settings_window, text=f"Versión local: {LOCAL_VERSION}", anchor="w").pack(fill="x", padx=12, pady=(12,6))
 
-    auto_check_var = ctk.BooleanVar(value=False)
-    ctk.CTkLabel(settings_window, text="Comprobación automática de actualizaciones al iniciar:").pack(fill="x", padx=12, pady=(6, 0))
-    auto_check_switch = ctk.CTkSwitch(settings_window, text="", variable=auto_check_var)
-    auto_check_switch.pack(anchor="w", padx=12, pady=(0, 6))
-
-    ctk.CTkLabel(settings_window, text="Tema:").pack(fill="x", padx=12, pady=(8, 0))
-    theme_var_local = ctk.StringVar(value="Oscuro")
+    # -------------------------
+    # Selector de tema
+    # -------------------------
+    ctk.CTkLabel(settings_window, text="Tema:").pack(fill="x", padx=12, pady=(8,0))
+    theme_var_local = ctk.StringVar(value=config.get("theme", "Oscuro"))
 
     def apply_theme_local():
         v = theme_var_local.get()
+        config["theme"] = v
+        save_config(config)
         if v == "Oscuro":
             ctk.set_appearance_mode(APPEARANCE_DARK)
             if os.path.exists(THEME_DARK_JSON):
@@ -793,67 +829,71 @@ def open_settings():
             ctk.set_default_color_theme(THEME_LIGHT)
 
     theme_box = ctk.CTkComboBox(settings_window, values=["Oscuro", "Claro"], variable=theme_var_local)
-    theme_box.pack(fill="x", padx=12, pady=(4, 6))
+    theme_box.pack(fill="x", padx=12, pady=(4,6))
     apply_theme_btn = ctk.CTkButton(settings_window, text="Aplicar tema", command=apply_theme_local)
-    apply_theme_btn.pack(padx=12, pady=(6, 10))
+    apply_theme_btn.pack(padx=12, pady=(6,10))
 
-    rv_label = ctk.CTkLabel(settings_window, text="Última versión remota: -", anchor="w")
-    rv_label.pack(fill="x", padx=12, pady=(6, 2))
+    # -------------------------
+    # Botón de actualización
+    # -------------------------
+    def check_update():
+        try:
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+            r = requests.get(url, timeout=5)
+            r.raise_for_status()
+            data = r.json()
+            ultima_version = data.get("tag_name", "").replace("v", "")
 
-    def settings_check_updates():
-        def _job():
-            try:
-                status_lbl = rv_label
-                token = os.environ.get("GITHUB_TOKEN")
-                rel = get_github_latest_release(GITHUB_REPO, token=token)
-                if not rel:
-                    status_lbl.configure(text="No se pudo consultar GitHub.")
-                    return
-                tag = rel.get('tag_name', '') or rel.get('name', '')
-                remote_version = tag.lstrip('vV') if tag else '0.0.0'
-                status_lbl.configure(text=f"Última versión remota: {remote_version}")
-                if is_newer_version(remote_version, LOCAL_VERSION):
-                    if messagebox.askyesno("Actualización", f"Versión {remote_version} disponible. ¿Descargar e instalar?"):
-                        check_for_updates_threaded(show_ui=True)
-                else:
-                    messagebox.showinfo("Actualizaciones", f"Estás en la última versión ({LOCAL_VERSION}).")
-            except Exception as e:
-                try:
-                    status_lbl.configure(text=f"Error: {e}")
-                except:
-                    pass
-        threading.Thread(target=_job, daemon=True).start()
+            if not ultima_version:
+                messagebox.showwarning("Actualización", "No se pudo obtener la versión más reciente.")
+                return
 
-    ctk.CTkButton(settings_window, text="Buscar actualizaciones ahora", command=settings_check_updates).pack(padx=12, pady=(6, 10))
-    ctk.CTkButton(settings_window, text="Cerrar", command=_on_close).pack(padx=12, pady=(8, 12))
+            if ultima_version != LOCAL_VERSION:
+                if messagebox.askyesno("Actualización disponible",
+                    f"Hay una nueva versión ({ultima_version}).\n\n¿Quieres descargarla ahora?"):
+                    webbrowser.open(data.get("html_url", f"https://github.com/{GITHUB_REPO}/releases"))
+            else:
+                messagebox.showinfo("Actualización", "Ya estás en la última versión 🎉")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo verificar actualización.\n\n{e}")
+
+    update_btn = ctk.CTkButton(settings_window, text="Buscar actualización", command=check_update)
+    update_btn.pack(padx=12, pady=(10,12))
+
+    # -------------------------
+    # Botón de cerrar
+    # -------------------------
+    ctk.CTkButton(settings_window, text="Cerrar", command=_on_close).pack(padx=12, pady=(8,12))
 
 # crear botón gear (solo imagen si existe, sin texto)
 if gear_img:
     gear_btn = ctk.CTkButton(frame, image=gear_img, text="", width=36, height=36, corner_radius=18, command=open_settings)
 else:
-    # fallback: solo icono unicode, sin texto largo
     gear_btn = ctk.CTkButton(frame, text="⚙", width=36, height=36, corner_radius=18, command=open_settings)
 gear_btn.grid(row=0, column=5, sticky="ne", padx=(6,6), pady=(6,0))
-
 
 # Row 1: URL
 ctk.CTkLabel(frame, text="URL del video:").grid(row=1, column=0, sticky="w", padx=PAD_X, pady=PAD_Y)
 entry_url = ctk.CTkEntry(frame, textvariable=url_var, placeholder_text="Pega la URL del video", corner_radius=8, height=ENTRY_H)
-entry_url.grid(row=1, column=1, columnspan=3, sticky="ew", padx=PAD_X, pady=PAD_Y)
-bt_search = ctk.CTkButton(frame, text="Buscar formatos", command=cargar_formatos, corner_radius=8, height=BTN_H)
+entry_url.grid(row=1, column=1, columnspan=3, sticky="ew", padx=PAD_X, pady=PAD_Y, ipadx=6, ipady=4)
+bt_search = ctk.CTkButton(frame, text="Buscar formatos", command=lambda: threading.Thread(target=cargar_formatos, daemon=True).start(), corner_radius=8, height=BTN_H)
 bt_search.grid(row=1, column=4, sticky="ew", padx=PAD_X, pady=PAD_Y)
 
 def on_url_change(*args):
     url = url_var.get().strip()
     if url.startswith("http") and ("youtube.com" in url or "youtu.be" in url):
-        cargar_formatos()
+        threading.Thread(target=cargar_formatos, daemon=True).start()
 url_var.trace_add("write", on_url_change)
 
 # Row 2: Tipo + thumbnail
 ctk.CTkLabel(frame, text="Tipo:").grid(row=2, column=0, sticky="w", padx=PAD_X, pady=PAD_Y)
 tipo_combo = ctk.CTkComboBox(frame, values=["Video","Audio"], variable=tipo_var, height=ENTRY_H)
 tipo_combo.grid(row=2, column=1, sticky="ew", padx=PAD_X, pady=PAD_Y)
-tipo_combo.bind("<<ComboboxSelected>>", lambda e: cargar_formatos())
+def on_tipo_change(event=None):
+    url = url_var.get().strip()
+    if url and (url.startswith("http") and ("youtube.com" in url or "youtu.be" in url)):
+        threading.Thread(target=cargar_formatos, daemon=True).start()
+tipo_combo.bind("<<ComboboxSelected>>", on_tipo_change)
 
 thumbnail_label = ctk.CTkLabel(frame, text="", width=THUMB_SIZE, height=THUMB_SIZE, corner_radius=8)
 thumbnail_label.grid(row=2, column=4, rowspan=4, padx=PAD_X, pady=PAD_Y, sticky="n")
@@ -867,27 +907,27 @@ ctk.CTkLabel(frame, text="Calidad:").grid(row=3, column=2, sticky="w", padx=PAD_
 calidad_combo = ctk.CTkComboBox(frame, values=[], variable=calidad_var, height=ENTRY_H)
 calidad_combo.grid(row=3, column=3, sticky="ew", padx=PAD_X, pady=PAD_Y)
 
-# Row 4: Guardar como (sin extensión)
+# Row 4: Guardar como (sin extensión) -> ahora título original (limpiado de caracteres inválidos)
 ctk.CTkLabel(frame, text="Guardar como:").grid(row=4, column=0, sticky="w", padx=PAD_X, pady=PAD_Y)
 save_as_entry = ctk.CTkEntry(frame, textvariable=save_as_var, placeholder_text="nombre_archivo (sin extensión)", corner_radius=8, height=ENTRY_H)
-save_as_entry.grid(row=4, column=1, columnspan=3, sticky="ew", padx=PAD_X, pady=PAD_Y)
+save_as_entry.grid(row=4, column=1, columnspan=3, sticky="ew", padx=PAD_X, pady=PAD_Y, ipadx=6, ipady=4)
 
-# Row 5: Ubicación
+# Row 5: Ubicación (ahora grande)
 ctk.CTkLabel(frame, text="Ubicación:").grid(row=5, column=0, sticky="w", padx=PAD_X, pady=PAD_Y)
 entry_loc = ctk.CTkEntry(frame, textvariable=ubicacion_var, placeholder_text="Carpeta de descarga", corner_radius=8, height=ENTRY_H)
-entry_loc.grid(row=5, column=1, sticky="ew", padx=PAD_X, pady=PAD_Y)
+entry_loc.grid(row=5, column=1, columnspan=3, sticky="ew", padx=PAD_X, pady=PAD_Y, ipadx=6, ipady=4)
 bt_elegir = ctk.CTkButton(frame, text="Elegir carpeta", command=elegir_ubicacion, corner_radius=8, height=BTN_H)
 bt_elegir.grid(row=5, column=4, padx=PAD_X, pady=PAD_Y, sticky="ew")
 
 # Progress + status
-progress_bar = ctk.CTkProgressBar(frame, width=640, height=14)
+progress_bar = ctk.CTkProgressBar(frame, width=720, height=14)
 progress_bar.grid(row=6, column=0, columnspan=6, pady=(12,6), padx=PAD_X, sticky="ew")
 progress_bar.set(0.0)
 
 status_label = ctk.CTkLabel(frame, text="Esperando...", font=ctk.CTkFont(size=11, slant="italic"))
 status_label.grid(row=7, column=0, columnspan=6, pady=(6,0))
 
-# Descargar (threaded)
+# Descargar (threaded) - sin spinner externo, solo cambio de texto del botón
 def descargar_video_threaded():
     url = url_var.get().strip()
     tipo = tipo_var.get().strip().lower()
@@ -895,26 +935,33 @@ def descargar_video_threaded():
     calidad = calidad_var.get().strip()
     ubicacion = ubicacion_var.get().strip()
     save_name_base = (save_as_var.get() or "").strip()
+
     if not url:
         mostrar_error("Ingresa una URL válida.")
         return
     if not ubicacion:
         mostrar_error("Selecciona una carpeta de descarga.")
         return
+
     save_name_base = strip_known_extension(save_name_base)
     if not save_name_base:
         save_name_base = "video"
+
+    # persistir última carpeta en config
     guardar_ultima_carpeta(ubicacion)
-    btn.configure(state="disabled")
+    btn.configure(state="disabled", text="Descargando...")
+    progress_bar.set(0.0)
+
     def _worker():
         try:
             yt = YouTube(url, on_progress_callback=on_progress)
         except Exception as e:
             mostrar_error(f"No se pudo procesar la URL:\n{e}")
-            btn.configure(state="normal")
+            btn.configure(state="normal", text="Descargar")
             return
         parsed_title, parsed_artist = parse_artist_title(getattr(yt, 'title', None), getattr(yt, 'author', None))
-        titulo_default = limpiar_nombre(parsed_title or getattr(yt,'title',None) or "video")
+        original_title = getattr(yt, 'title', None) or "video"
+        titulo_default = limpiar_nombre_simple(original_title)
         os.makedirs(ubicacion, exist_ok=True)
         tmp = tempfile.gettempdir()
         extra = ['mp3', 'wav', 'aiff', 'flac', 'alac', 'wma']
@@ -930,7 +977,7 @@ def descargar_video_threaded():
                     stream = next((s for s in yt.streams.filter(adaptive=True, only_video=True) if s.resolution == calidad), None)
                 if not stream:
                     mostrar_error("No se encontró video en la calidad seleccionada.")
-                    btn.configure(state="normal")
+                    btn.configure(state="normal", text="Descargar")
                     return
                 temp_file = stream.download(output_path=tmp, filename_prefix="tmp_")
                 temp_ext = os.path.splitext(temp_file)[1].lstrip('.').lower()
@@ -947,7 +994,7 @@ def descargar_video_threaded():
                 if not stream:
                     mostrar_error("No se encontró stream de audio.")
                     ttkwindow.after(0, lambda: status_label.configure(text="Error: No se encontró stream de audio."))
-                    btn.configure(state="normal")
+                    btn.configure(state="normal", text="Descargar")
                     return
                 temp_file = stream.download(output_path=tmp, filename_prefix="tmp_")
                 ttkwindow.after(0, lambda: status_label.configure(text="Audio descargado."))
@@ -976,27 +1023,19 @@ def descargar_video_threaded():
         except Exception as e:
             mostrar_error(f"Ocurrió un error:\n{e}")
         finally:
-            btn.configure(state="normal")
+            btn.configure(state="normal", text="Descargar")
     threading.Thread(target=_worker, daemon=True).start()
 
 btn = ctk.CTkButton(frame, text="Descargar", command=descargar_video_threaded,
                     corner_radius=8, fg_color="#6C4AB6", hover_color="#7E57C2", height=BTN_H)
 btn.grid(row=8, column=2, pady=(18,6), padx=6, sticky="ew")
 
-# cargar ultima carpeta si existe
+# cargar ultima carpeta si existe en config
 ultima = cargar_ultima_carpeta()
 if ultima:
     ubicacion_var.set(ultima)
 
-# Footer
-footer_frame = ctk.CTkFrame(frame, fg_color=("#281226"))
-footer_frame.grid(row=13, column=0, columnspan=6, pady=(12, 6), sticky="ew", padx=PAD_X)
-footer_frame.columnconfigure(0, weight=1)
-footer_label = ctk.CTkLabel(footer_frame, text="Hecho por JOMB S.A.S  •  Visita nuestro sitio web", text_color="#E8DAFF", font=ctk.CTkFont(size=11, slant="italic"))
-footer_label.grid(sticky="ew", padx=8, pady=8)
-footer_label.bind("<Button-1>", lambda e: webbrowser.open_new("https://jhojanomb.github.io/JOMB/"))
-
-# Comprobar actualizaciones en background al iniciar (silencioso)
+# comprobar actualizaciones en background (silencioso)
 check_for_updates_threaded(show_ui=False)
 
 if __name__ == "__main__":
