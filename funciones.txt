@@ -1,0 +1,1 @@
+Esta instalado el pip-review, entocnes con este comando se actualiza toddas las dependencias "pip-review --local --interactive"
