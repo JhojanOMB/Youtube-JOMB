@@ -50,16 +50,16 @@ jobs:
     - name: Construir exe con PyInstaller (Youtube-JOMB.exe)
       shell: pwsh
       run: |
-        pyinstaller --onefile --windowed --add-data "VERSION;." --add-data "iconos;iconos" --icon=iconos/icono.ico --name "Youtube-JOMB" youtube.py
+        pyinstaller --onefile --windowed --add-data "VERSION;." --add-data "iconos;iconos" --icon=iconos/icono.ico --name "Youtube-JOMB" gui.py
 
     - name: Verificar exe (dist\Youtube-JOMB.exe)
       shell: pwsh
       run: |
         if (-not (Test-Path .\dist\Youtube-JOMB.exe)) {
           Write-Host "Listado carpeta dist:"; Get-ChildItem -Force dist -ErrorAction SilentlyContinue
-          Write-Error "No se generó dist\\Youtube-JOMB.exe. Revisa PyInstaller o el nombre del script."
+          Write-Error "No se generó dist\Youtube-JOMB.exe. Revisa PyInstaller o el nombre del script."
         } else {
-          Write-Host "dist\\Youtube-JOMB.exe generado correctamente."
+          Write-Host "dist\Youtube-JOMB.exe generado correctamente."
         }
 
     - name: Crear carpeta installer (asegurar)
